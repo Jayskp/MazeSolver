@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:collection';
@@ -41,7 +42,8 @@ class MazeSolverScreen extends StatefulWidget {
   State<MazeSolverScreen> createState() => _MazeSolverScreenState();
 }
 
-class _MazeSolverScreenState extends State<MazeSolverScreen> {
+class _MazeSolverScreenState extends State<MazeSolverScreen>
+    with SingleTickerProviderStateMixin {
   static const int numRows = 20;
   static const int numCols = 20;
   late List<List<Node>> grid;
@@ -49,14 +51,52 @@ class _MazeSolverScreenState extends State<MazeSolverScreen> {
   late Node endNode;
   bool isRunning = false;
 
+  // Animation controller for UI transitions
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
   // Define algorithm options
-  final List<String> algorithms = ['Dijkstra', 'A*', 'BFS'];
+  final List<String> algorithms = ['Dijkstra', 'DFS', 'BFS'];
   String selectedAlgorithm = 'Dijkstra';
+
+  // Animation durations
+  static const Duration visitedAnimDuration = Duration(milliseconds: 20);
+  static const Duration pathAnimDuration = Duration(milliseconds: 30);
+
+  // UI Theme colors
+  final Color backgroundColor = const Color(0xFF1E1E2C);
+  final Color gridBackgroundColor = const Color(0xFF2D2D3A);
+  final Color startColor = const Color(0xFF4CAF50);
+  final Color endColor = const Color(0xFFF44336);
+  final Color pathColor = const Color(0xFFFFEB3B);
+  final Color obstacleColor = const Color(0xFF424242);
+  final Color visitedColor = const Color(0xFF64B5F6);
+  final Color emptyColor = const Color(0xFF3F3F5A);
+  final Color buttonColor = const Color(0xFF6C63FF);
 
   @override
   void initState() {
     super.initState();
     initGrid();
+
+    // Initialize animation controller
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 500),
+      vsync: this,
+    );
+
+    _animation = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeInOut,
+    );
+
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 
   // Initialize the grid and set the start and end nodes.
@@ -83,26 +123,18 @@ class _MazeSolverScreenState extends State<MazeSolverScreen> {
     });
   }
 
-  // Calculate Manhattan distance for heuristic
-  double getManhattanDistance(Node a, Node b) {
-    return (a.row - b.row).abs() + (a.col - b.col).abs().toDouble();
-  }
-
   // Returns valid neighbors (up, down, left, right) for a given node.
   List<Node> getNeighbors(Node node) {
-    List<Node> neighbors = [];
-    int r = node.row;
-    int c = node.col;
+    final int r = node.row;
+    final int c = node.col;
 
     // Check all 4 directions
-    final directions = [
-      if (r > 0) grid[r - 1][c],                // Up
-      if (r < numRows - 1) grid[r + 1][c],      // Down
-      if (c > 0) grid[r][c - 1],                // Left
-      if (c < numCols - 1) grid[r][c + 1],      // Right
+    return [
+      if (r > 0) grid[r - 1][c], // Up
+      if (r < numRows - 1) grid[r + 1][c], // Down
+      if (c > 0) grid[r][c - 1], // Left
+      if (c < numCols - 1) grid[r][c + 1], // Right
     ];
-
-    return directions;
   }
 
   // Animates the final path by tracing back from the end node.
@@ -122,7 +154,7 @@ class _MazeSolverScreenState extends State<MazeSolverScreen> {
       setState(() {
         path[i].isPath = true;
       });
-      await Future.delayed(const Duration(milliseconds: 30));
+      await Future.delayed(pathAnimDuration);
     }
   }
 
@@ -132,13 +164,13 @@ class _MazeSolverScreenState extends State<MazeSolverScreen> {
       isRunning = true;
     });
 
-    // Use a priority queue for better performance
-    final unvisitedQueue = PriorityQueue<Node>((a, b) =>
-        a.distance.compareTo(b.distance));
-
     // Reset grid before starting
     resetGrid(keepObstacles: true);
     startNode.distance = 0;
+
+    // Use a priority queue for better performance
+    final unvisitedQueue =
+        HeapPriorityQueue<Node>((a, b) => a.distance.compareTo(b.distance));
 
     // Add all nodes to queue
     for (var row in grid) {
@@ -160,7 +192,7 @@ class _MazeSolverScreenState extends State<MazeSolverScreen> {
       setState(() {
         current.isVisited = true;
       });
-      await Future.delayed(const Duration(milliseconds: 20));
+      await Future.delayed(visitedAnimDuration);
 
       // If we've reached the end node, animate the final path.
       if (current == endNode) {
@@ -192,74 +224,50 @@ class _MazeSolverScreenState extends State<MazeSolverScreen> {
     });
   }
 
-  // A* search algorithm
-  Future<void> runAStar() async {
+  // DFS algorithm (replacing A*)
+  Future<void> runDFS() async {
     setState(() {
       isRunning = true;
     });
 
     // Reset grid before starting
     resetGrid(keepObstacles: true);
-    startNode.distance = 0;
 
-    // Create open and closed sets
-    final openSet = <Node>{startNode};
-    final closedSet = <Node>{};
+    // Use a stack for DFS
+    final stack = <Node>[];
+    stack.add(startNode);
 
-    // Create map for f-scores (distance + heuristic)
-    final Map<Node, double> fScore = {};
-    for (var row in grid) {
-      for (var node in row) {
-        fScore[node] = double.infinity;
-      }
-    }
-    fScore[startNode] = getManhattanDistance(startNode, endNode);
+    // Keep track of visited nodes
+    final Set<Node> visited = {};
 
-    while (openSet.isNotEmpty) {
-      // Get node with lowest f-score
-      Node current = openSet.reduce((a, b) =>
-      fScore[a]! < fScore[b]! ? a : b);
+    bool foundPath = false;
 
-      // If current is the end, we're done
-      if (current == endNode) {
-        await animatePath();
-        setState(() {
-          isRunning = false;
-        });
-        return;
-      }
+    while (stack.isNotEmpty && !foundPath) {
+      Node current = stack.removeLast();
 
-      // Move current from open to closed set
-      openSet.remove(current);
-      closedSet.add(current);
+      // Skip if already visited
+      if (visited.contains(current)) continue;
 
+      // Mark as visited
+      visited.add(current);
       setState(() {
         current.isVisited = true;
       });
-      await Future.delayed(const Duration(milliseconds: 20));
+      await Future.delayed(visitedAnimDuration);
 
-      // Check all neighbors
+      // Check if we reached the end
+      if (current == endNode) {
+        foundPath = true;
+        await animatePath();
+        break;
+      }
+
+      // Add unvisited neighbors to stack
       for (Node neighbor in getNeighbors(current)) {
-        if (closedSet.contains(neighbor) || neighbor.isObstacle) continue;
-
-        // Calculate tentative g-score
-        double tentativeGScore = current.distance + 1;
-
-        // If neighbor not in open set, add it
-        if (!openSet.contains(neighbor)) {
-          openSet.add(neighbor);
-        }
-        // If this path is worse, skip it
-        else if (tentativeGScore >= neighbor.distance) {
-          continue;
-        }
-
-        // This is the best path so far
-        setState(() {
+        if (!visited.contains(neighbor) && !neighbor.isObstacle) {
           neighbor.previous = current;
-          neighbor.distance = tentativeGScore;
-          fScore[neighbor] = tentativeGScore + getManhattanDistance(neighbor, endNode);
-        });
+          stack.add(neighbor);
+        }
       }
     }
 
@@ -287,7 +295,7 @@ class _MazeSolverScreenState extends State<MazeSolverScreen> {
       setState(() {
         current.isVisited = true;
       });
-      await Future.delayed(const Duration(milliseconds: 20));
+      await Future.delayed(visitedAnimDuration);
 
       // If we found the end node
       if (current == endNode) {
@@ -322,8 +330,8 @@ class _MazeSolverScreenState extends State<MazeSolverScreen> {
       case 'Dijkstra':
         await runDijkstra();
         break;
-      case 'A*':
-        await runAStar();
+      case 'DFS':
+        await runDFS();
         break;
       case 'BFS':
         await runBFS();
@@ -334,119 +342,322 @@ class _MazeSolverScreenState extends State<MazeSolverScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: backgroundColor,
       appBar: AppBar(
-        title: const Text('Maze Solver'),
-      ),
-      body: Column(
-        children: [
-          // Algorithm selector
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Row(
-              children: [
-                const Text('Algorithm: '),
-                DropdownButton<String>(
-                  value: selectedAlgorithm,
-                  onChanged: isRunning
-                      ? null
-                      : (String? newValue) {
-                    if (newValue != null) {
-                      setState(() {
-                        selectedAlgorithm = newValue;
-                      });
-                    }
-                  },
-                  items: algorithms.map<DropdownMenuItem<String>>((String value) {
-                    return DropdownMenuItem<String>(
-                      value: value,
-                      child: Text(value),
-                    );
-                  }).toList(),
-                ),
-              ],
-            ),
+        backgroundColor: backgroundColor,
+        elevation: 0,
+        title: const Text(
+          'Maze Solver',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
           ),
-
-          // Grid display
-          Expanded(
-            child: GridView.builder(
-              padding: const EdgeInsets.all(8.0),
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: numCols,
-                childAspectRatio: 1.0,
+        ),
+        centerTitle: true,
+      ),
+      body: FadeTransition(
+        opacity: _animation,
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            children: [
+              // Algorithm selector
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                decoration: BoxDecoration(
+                  color: gridBackgroundColor,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.2),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Algorithm:',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    DropdownButton<String>(
+                      value: selectedAlgorithm,
+                      dropdownColor: gridBackgroundColor,
+                      underline: Container(),
+                      icon: const Icon(Icons.arrow_drop_down,
+                          color: Colors.white),
+                      style: const TextStyle(color: Colors.white),
+                      onChanged: isRunning
+                          ? null
+                          : (String? newValue) {
+                              if (newValue != null) {
+                                setState(() {
+                                  selectedAlgorithm = newValue;
+                                });
+                              }
+                            },
+                      items: algorithms
+                          .map<DropdownMenuItem<String>>((String value) {
+                        return DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(value),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
               ),
-              itemCount: numRows * numCols,
-              itemBuilder: (context, index) {
-                int row = index ~/ numCols;
-                int col = index % numCols;
-                Node node = grid[row][col];
 
-                // Determine cell color based on its state.
-                Color color;
-                if (node == startNode) {
-                  color = Colors.green;
-                } else if (node == endNode) {
-                  color = Colors.red;
-                } else if (node.isPath) {
-                  color = Colors.yellow;
-                } else if (node.isObstacle) {
-                  color = Colors.black;
-                } else if (node.isVisited) {
-                  color = Colors.lightBlueAccent;
-                } else {
-                  color = Colors.white;
-                }
+              const SizedBox(height: 16),
 
-                return GestureDetector(
-                  onTap: () {
-                    // Allow toggling obstacles only if not running and not a start/end node.
-                    if (!isRunning && node != startNode && node != endNode) {
-                      setState(() {
-                        node.isObstacle = !node.isObstacle;
-                      });
-                    }
-                  },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    decoration: BoxDecoration(
-                      color: color,
-                      border: Border.all(color: Colors.grey.shade300, width: 0.5),
-                      borderRadius: BorderRadius.circular(2),
+              // Legend
+              Container(
+                padding: const EdgeInsets.all(8.0),
+                decoration: BoxDecoration(
+                  color: gridBackgroundColor,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _buildLegendItem('Start', startColor),
+                    _buildLegendItem('End', endColor),
+                    _buildLegendItem('Wall', obstacleColor),
+                    _buildLegendItem('Path', pathColor),
+                    _buildLegendItem('Visited', visitedColor),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Grid display
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: gridBackgroundColor,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  padding: const EdgeInsets.all(8.0),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: GridView.builder(
+                      padding: const EdgeInsets.all(4.0),
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: numCols,
+                        childAspectRatio: 1.0,
+                        crossAxisSpacing: 2,
+                        mainAxisSpacing: 2,
+                      ),
+                      itemCount: numRows * numCols,
+                      itemBuilder: (context, index) {
+                        int row = index ~/ numCols;
+                        int col = index % numCols;
+                        Node node = grid[row][col];
+
+                        // Determine cell color based on its state.
+                        Color color;
+                        if (node == startNode) {
+                          color = startColor;
+                        } else if (node == endNode) {
+                          color = endColor;
+                        } else if (node.isPath) {
+                          color = pathColor;
+                        } else if (node.isObstacle) {
+                          color = obstacleColor;
+                        } else if (node.isVisited) {
+                          color = visitedColor;
+                        } else {
+                          color = emptyColor;
+                        }
+
+                        return GestureDetector(
+                          onTap: () {
+                            // Allow toggling obstacles only if not running and not a start/end node.
+                            if (!isRunning &&
+                                node != startNode &&
+                                node != endNode) {
+                              setState(() {
+                                node.isObstacle = !node.isObstacle;
+                              });
+                            }
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            decoration: BoxDecoration(
+                              color: color,
+                              borderRadius: BorderRadius.circular(4),
+                              boxShadow: node.isObstacle
+                                  ? [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.2),
+                                        blurRadius: 2,
+                                        offset: const Offset(0, 1),
+                                      ),
+                                    ]
+                                  : null,
+                            ),
+                            child: node == startNode
+                                ? const Icon(Icons.play_arrow,
+                                    color: Colors.white, size: 14)
+                                : node == endNode
+                                    ? const Icon(Icons.flag,
+                                        color: Colors.white, size: 14)
+                                    : null,
+                          ),
+                        );
+                      },
                     ),
                   ),
-                );
-              },
-            ),
-          ),
+                ),
+              ),
 
-          // Control buttons
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                ElevatedButton(
-                  onPressed: isRunning ? null : runAlgorithm,
-                  child: const Text('Start'),
-                ),
-                ElevatedButton(
-                  onPressed: isRunning
-                      ? null
-                      : () => resetGrid(keepObstacles: true),
-                  child: const Text('Reset Path'),
-                ),
-                ElevatedButton(
-                  onPressed: isRunning
-                      ? null
-                      : () => resetGrid(keepObstacles: false),
-                  child: const Text('Clear All'),
-                ),
-              ],
-            ),
+              const SizedBox(height: 16),
+
+              // Control buttons
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _buildButton(
+                    'Start',
+                    Icons.play_arrow,
+                    isRunning ? null : runAlgorithm,
+                  ),
+                  _buildButton(
+                    'Reset Path',
+                    Icons.refresh,
+                    isRunning ? null : () => resetGrid(keepObstacles: true),
+                  ),
+                  _buildButton(
+                    'Clear All',
+                    Icons.delete_outline,
+                    isRunning ? null : () => resetGrid(keepObstacles: false),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
+  }
+
+  Widget _buildLegendItem(String label, Color color) {
+    return Row(
+      children: [
+        Container(
+          width: 16,
+          height: 16,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(4),
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildButton(String label, IconData icon, VoidCallback? onPressed) {
+    return ElevatedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon),
+      label: Text(label),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: buttonColor,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        elevation: 4,
+        shadowColor: buttonColor.withOpacity(0.5),
+        disabledBackgroundColor: buttonColor.withOpacity(0.3),
+        disabledForegroundColor: Colors.white.withOpacity(0.5),
+      ),
+    );
+  }
+}
+
+// Optimized priority queue implementation
+class HeapPriorityQueue<E> {
+  final Comparator<E> _comparison;
+  final List<E> _queue = <E>[];
+
+  HeapPriorityQueue(int Function(E, E) comparison) : _comparison = comparison;
+
+  bool get isEmpty => _queue.isEmpty;
+  bool get isNotEmpty => _queue.isNotEmpty;
+  int get length => _queue.length;
+
+  void add(E element) {
+    _queue.add(element);
+    _siftUp(_queue.length - 1);
+  }
+
+  E removeFirst() {
+    final E result = _queue.first;
+    final E last = _queue.removeLast();
+    if (_queue.isNotEmpty) {
+      _queue[0] = last;
+      _siftDown(0);
+    }
+    return result;
+  }
+
+  void _siftUp(int index) {
+    final E element = _queue[index];
+    while (index > 0) {
+      int parentIndex = (index - 1) ~/ 2;
+      E parent = _queue[parentIndex];
+      if (_comparison(element, parent) >= 0) break;
+      _queue[index] = parent;
+      index = parentIndex;
+    }
+    _queue[index] = element;
+  }
+
+  void _siftDown(int index) {
+    final int end = _queue.length;
+    final E element = _queue[index];
+    while (true) {
+      int childIndex = index * 2 + 1;
+      if (childIndex >= end) break;
+      E child = _queue[childIndex];
+      int rightChildIndex = childIndex + 1;
+      if (rightChildIndex < end) {
+        E rightChild = _queue[rightChildIndex];
+        if (_comparison(rightChild, child) < 0) {
+          childIndex = rightChildIndex;
+          child = rightChild;
+        }
+      }
+      if (_comparison(element, child) <= 0) break;
+      _queue[index] = child;
+      index = childIndex;
+    }
+    _queue[index] = element;
   }
 }

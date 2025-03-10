@@ -16,10 +16,37 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'My Flutter App',
+      title: 'Maze Solver',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        primarySwatch: Colors.blue,
+        primaryColor: const Color(0xFF6C63FF),
+        scaffoldBackgroundColor: const Color(0xFF1E1E2C),
+        colorScheme: ColorScheme.dark(
+          primary: const Color(0xFF6C63FF),
+          secondary: const Color(0xFF64B5F6),
+          surface: const Color(0xFF2D2D3A),
+          background: const Color(0xFF1E1E2C),
+        ),
         useMaterial3: true,
+        fontFamily: 'Roboto',
+        textTheme: const TextTheme(
+          titleLarge: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+          bodyLarge: TextStyle(color: Colors.white),
+          bodyMedium: TextStyle(color: Colors.white),
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF6C63FF),
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
       ),
       home: const MazeSolverScreen(),
     );
@@ -48,14 +75,13 @@ Future<void> setOptimalDisplayMode() async {
     if (savedRefreshRate > 0) {
       // Find the closest matching refresh rate
       targetMode = modes.firstWhere(
-            (mode) => mode.refreshRate.round() == savedRefreshRate,
+        (mode) => mode.refreshRate.round() == savedRefreshRate,
         orElse: () => modes.first,
       );
     } else {
       // No preference set, use highest refresh rate available
-      targetMode = modes.reduce(
-              (a, b) => a.refreshRate > b.refreshRate ? a : b
-      );
+      targetMode =
+          modes.reduce((a, b) => a.refreshRate > b.refreshRate ? a : b);
     }
 
     await FlutterDisplayMode.setPreferredMode(targetMode);
