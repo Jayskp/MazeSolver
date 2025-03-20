@@ -37,6 +37,7 @@ dependencies:
   flutter_displaymode: ^0.6.0
   shared_preferences: ^2.5.2
   collection: ^1.19.0
+  flutter_launcher_icons: ^0.14.3
 
 dev_dependencies:
   flutter_test:
@@ -90,3 +91,13 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/images/3064901.png"
+  min_sdk_android: 21 # android min sdk min:16, default 21
+  web:
+    generate: true
+    image_path: "assets/images/3064901.png"
+    background_color: "0xFF161616"
+    theme_color: "#hexcode"
